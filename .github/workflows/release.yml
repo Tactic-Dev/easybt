@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version is consistent
+        run: |
+          V=$(cat VERSION)
+          grep -q "VERSION = \"$V\"" easybt_settings.py || { echo "easybt_settings.py VERSION != $V"; exit 1; }
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            [ "${GITHUB_REF_NAME}" = "v$V" ] || { echo "tag ${GITHUB_REF_NAME} != v$V"; exit 1; }
+          fi
+
+      - name: Syntax check
+        run: python3 -m py_compile easybt.py easybt_settings.py
+
+      - name: Build .deb
+        run: packaging/build-deb.sh
+
+      - name: Install test (deps resolve, launcher runs)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ./dist/easybt_*_all.deb
+          easybt --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: easybt-deb
+          path: dist/*.deb
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          generate_release_notes: true

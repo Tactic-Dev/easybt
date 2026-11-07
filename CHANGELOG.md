@@ -12,3 +12,5 @@ First release. A simple, reliable Bluetooth manager for Linux Mint / Cinnamon (G
 - Settings: General, Local services, Features, Troubleshoot.
 - Auto-connect favorites on startup / Bluetooth on / wake (one try each, no retry loop).
 - Notifications for unexpected drops (with Reconnect) and low battery.
+- Built-in signal-strength reader (no Blueman dependency).
+- Packaging: `.deb` for Debian/Ubuntu/Mint, per-user `install.sh`/`uninstall.sh`, `easybt --version`.

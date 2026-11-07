@@ -66,12 +66,17 @@ class Config(dict):
 def start_at_login():
     return os.path.exists(EASYBT_AUTOSTART)
 
+def launch_command(script_path):
+    """Installed (deb / install.sh) → the `easybt` launcher on PATH; running from a checkout → that script."""
+    launcher = shutil.which("easybt")
+    return launcher if launcher else f"/usr/bin/python3 {script_path}"
+
 def set_start_at_login(on, script_path):
     if on:
         os.makedirs(AUTOSTART_DIR, exist_ok=True)
         with open(EASYBT_AUTOSTART, "w") as f:
             f.write("[Desktop Entry]\nType=Application\nName=EasyBT\nComment=Bluetooth tray icon\n"
-                    f"Exec=/usr/bin/python3 {script_path} --hidden\nIcon=bluetooth\nTerminal=false\n"
+                    f"Exec={launch_command(script_path)} --hidden\nIcon=bluetooth\nTerminal=false\n"
                     "X-GNOME-Autostart-enabled=true\n")
     elif os.path.exists(EASYBT_AUTOSTART):
         os.remove(EASYBT_AUTOSTART)
@@ -227,16 +232,17 @@ class SettingsWindow(Gtk.Window):
         self.vis_handler = self.vis.connect("notify::active", lambda s, _p: app.set_visible(s.get_active()))
         self.vis_row = _row("Let other devices find this laptop", "", self.vis)
         login = _switch(start_at_login(), lambda on: set_start_at_login(on, app.script_path))
-        blue = _switch(not blueman_tray_enabled(), lambda on: set_blueman_tray(not on))
+        startup = [_row("Start EasyBT when I log in", "Runs quietly in the tray so reconnects, file receiving and warnings work.", login)]
+        if os.path.exists(BLUEMAN_AUTOSTART_SYS):  # only offered when Blueman is installed
+            blue = _switch(not blueman_tray_enabled(), lambda on: set_blueman_tray(not on))
+            startup.append(_row("Hide Blueman's tray icon",
+                                "Recommended. EasyBT does everything it did. Blueman's apps stay installed.", blue))
         return _page(
             _group("This laptop", [
                 _row("Bluetooth name", "What phones and speakers see when they look for this laptop.", self.name),
                 self.vis_row,
             ]),
-            _group("Startup", [
-                _row("Start EasyBT when I log in", "Runs quietly in the tray so reconnects, file receiving and warnings work.", login),
-                _row("Hide Blueman's tray icon", "Recommended. EasyBT now does everything it did. Blueman's apps stay installed.", blue),
-            ]),
+            _group("Startup", startup),
         )
 
     # ---------- Local services ----------

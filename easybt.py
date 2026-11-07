@@ -126,14 +126,47 @@ def set_audio_mode(mac, mode):
         subprocess.run(["pactl", "set-card-profile", "bluez_card." + mac.replace(":", "_"), prof], timeout=3)
     return bool(prof)
 
-def signal_word(mac, hci="hci0"):
-    """Strong / OK / Weak for a connected classic device (HCI RSSI relative to the ideal range; 0 = ideal)."""
+HCIGETCONNINFO = 0x800448D5  # _IOR('H', 213, int)
+
+def hci_rssi(mac, hci="hci0"):
+    """RSSI of an existing classic (ACL) link, via a raw HCI socket + "Read RSSI" command.
+    Unprivileged (the kernel allows this read-only command). Value is relative to the controller's
+    ideal receive range: 0 = ideal, negative = weaker. None if not available."""
+    import socket, fcntl, struct, select
     try:
-        from _blueman import conn_info  # ships with blueman; harmless if missing
-        c = conn_info(mac, hci); c.init()
-        try: rssi = c.get_rssi()
-        finally: c.deinit()
-    except Exception:
+        dev_id = int(hci.replace("hci", ""))
+        addr = bytes(int(x, 16) for x in reversed(mac.split(":")))
+    except ValueError:
+        return None
+    try:
+        s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
+    except (OSError, AttributeError):
+        return None
+    try:
+        s.bind((dev_id,))
+        # struct hci_conn_info_req { bdaddr; type; [pad]; hci_conn_info { handle u16 @8, ... } }
+        req = bytearray(addr + bytes([1]) + bytes(17))
+        fcntl.ioctl(s.fileno(), HCIGETCONNINFO, req, True)
+        handle = struct.unpack_from("<H", req, 8)[0]
+        s.setsockopt(0, 2, struct.pack("<IIIH2x", 1 << 4, 1 << 0x0E, 0, 0))  # only Command Complete events
+        s.send(struct.pack("<BHBH", 0x01, 0x1405, 2, handle))                 # OGF 0x05 / OCF 0x0005
+        for _ in range(5):
+            if not select.select([s], [], [], 1.0)[0]:
+                break
+            pkt = s.recv(260)
+            if len(pkt) >= 10 and pkt[1] == 0x0E and struct.unpack_from("<H", pkt, 4)[0] == 0x1405:
+                status, _h, rssi = struct.unpack_from("<BHb", pkt, 6)
+                return rssi if status == 0 else None
+    except OSError:
+        return None
+    finally:
+        s.close()
+    return None
+
+def signal_word(mac, hci="hci0"):
+    """Strong / OK / Weak for a connected device (no Blueman needed)."""
+    rssi = hci_rssi(mac, hci)
+    if rssi is None:
         return None
     return "Strong" if rssi >= -4 else "OK" if rssi >= -12 else "Weak"
 
@@ -1258,6 +1291,9 @@ class App(Gtk.Application):
 
 
 if __name__ == "__main__":
+    if "--version" in sys.argv:
+        from easybt_settings import VERSION
+        print(f"EasyBT {VERSION}"); sys.exit(0)
     app = App()
     # Our own flag; strip it so Gtk.Application doesn't reject it as unknown.
     sys.exit(app.run([x for x in sys.argv if x != "--hidden"]))

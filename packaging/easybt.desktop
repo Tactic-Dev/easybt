@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=EasyBT
+GenericName=Bluetooth Manager
+Comment=Connect your Bluetooth devices, simply
+Exec=easybt
+Icon=bluetooth
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=bluetooth;headphones;speaker;keyboard;pair;
+StartupNotify=true
