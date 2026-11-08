@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0 (2026-11-07)
+- Main window is now a rounded tray panel (matches the other Easy* panels), opens above the tray icon and closes when you click away.
+- Device rows mention signal only when it's OK or weak.
+
 ## 1.1.0 (2026-11-07)
 - Only one tray panel open at a time across the TACTICDEV Easy* apps (opening one closes the others).
 - `restart` action so the app can restart itself inside the desktop session.

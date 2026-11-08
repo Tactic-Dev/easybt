@@ -627,7 +627,7 @@ class DeviceRow(Gtk.ListBoxRow):
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.name = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END)
         # Status is one line (full text in the tooltip) so every row is the same height.
-        self.status = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=30)
+        self.status = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=40)
         self.status.get_style_context().add_class("dim-label")
         name_line = Gtk.Box(spacing=8)
         name_line.pack_start(self.name, False, True, 0)
@@ -785,7 +785,9 @@ class DeviceRow(Gtk.ListBoxRow):
             self.status.set_text("Blocked · can't connect (⋯ → Unblock)")
         elif on:
             bits = []
-            if self.signal: bits.append(f"{self.signal} signal" if self.signal != "Weak" else "<span foreground='#e3b341'>Weak signal</span>")
+            # Only mention signal when it's worth knowing about (keeps rows short and calm).
+            if self.signal == "Weak": bits.append("<span foreground='#e3b341'>Weak signal</span>")
+            elif self.signal == "OK": bits.append("OK signal")
             if self.mode == "calls": bits.append("Calls mode")
             self.status.set_markup("<span foreground='#3fb950'>●</span> Connected" + "".join(" · " + b for b in bits))
         else:
@@ -958,23 +960,31 @@ class App(Gtk.Application):
         self.agent = Agent(self.bz, lambda: self.add_dlg or (self.win if self.win and self.win.get_visible() else None),
                            adding=lambda: self.add_dlg is not None)
         self.agent.register()
-        self.win = Gtk.ApplicationWindow(application=self, title="Bluetooth")
-        self.win.set_default_size(460, 520)
+        # Rounded tray panel, same look as EasySound / EasyNet / EasyPower / EasyClip.
+        self.win = Gtk.ApplicationWindow(application=self, title="Bluetooth", decorated=False, resizable=False)
+        self.win.get_style_context().add_class("easybt-panel")
+        vis = self.win.get_screen().get_rgba_visual()
+        if vis: self.win.set_visual(vis)
+        self.win.set_app_paintable(True)
         self.win.set_icon_name("bluetooth")
+        self.win.set_keep_above(True); self.win.set_skip_taskbar_hint(True); self.win.set_skip_pager_hint(True)
+        self.win.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.win.connect("focus-out-event", lambda *_: (GLib.timeout_add(150, self._maybe_hide), False)[-1])
+        self.win.connect("key-press-event", lambda _w, ev: (self.win.hide(), True)[-1] if ev.keyval == Gdk.KEY_Escape else False)
         def on_close(*_):
             if self.tray and self.cfg["show_tray"]:
                 self.win.hide(); return True   # keep running in the tray
             self.quit(); return True
         self.win.connect("delete-event", on_close)
-        hb = Gtk.HeaderBar(show_close_button=True, title="Bluetooth")
+        hb = Gtk.Box(spacing=8)   # in-card header: title left, settings + power right
+        title = Gtk.Label(label="Bluetooth", xalign=0); title.get_style_context().add_class("bt-title")
         self.power = Gtk.Switch(valign=Gtk.Align.CENTER, tooltip_text="Bluetooth on/off")
         self.power_handler = self.power.connect("notify::active", self.on_power)
-        hb.pack_end(self.power)
-        gear = Gtk.Button(relief=Gtk.ReliefStyle.NONE, tooltip_text="Settings")
+        gear = Gtk.Button(relief=Gtk.ReliefStyle.NONE, tooltip_text="Settings", valign=Gtk.Align.CENTER)
+        gear.get_style_context().add_class("bt-iconbtn")
         gear.add(Gtk.Image.new_from_icon_name("emblem-system-symbolic", Gtk.IconSize.BUTTON))
-        gear.connect("clicked", lambda *_: self.open_settings())
-        hb.pack_start(gear)   # gear left, power right → "Bluetooth" sits centered between them
-        self.win.set_titlebar(hb)
+        gear.connect("clicked", lambda *_: (self.win.hide(), self.open_settings()))
+        hb.pack_start(title, True, True, 0); hb.pack_end(self.power, False, False, 0); hb.pack_end(gear, False, False, 0)
         ap, _ = self.bz.adapter()
         self.hci = ap.rsplit("/", 1)[-1] if ap else "hci0"
         try:
@@ -983,9 +993,11 @@ class App(Gtk.Application):
             print("[obex]", e.message, file=sys.stderr); self.obex = None
         GLib.timeout_add_seconds(10, self._tick)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=14)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=8)
+        outer.get_style_context().add_class("bt-card"); outer.set_size_request(450, -1)
+        outer.pack_start(hb, False, False, 0)
         self.banner_box = Gtk.Box(spacing=10)
-        self.banner_box.get_style_context().add_class("frame")
+        self.banner_box.get_style_context().add_class("bt-banner")
         self.banner = Gtk.Label(xalign=0, wrap=True, max_width_chars=34)
         self.banner_btn = Gtk.Button(valign=Gtk.Align.CENTER)
         self.banner_btn.connect("clicked", self.on_banner_action)
@@ -1000,16 +1012,28 @@ class App(Gtk.Application):
         add.connect("clicked", self.on_add); self.add_btn = add
         head.pack_end(add, False, False, 0)
         outer.pack_start(head, False, False, 0)
-        sc = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
-        frame = Gtk.Frame(); self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        sc = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, min_content_height=300, max_content_height=300)
+        sc.get_style_context().add_class("bt-listwrap")
+        frame = Gtk.Box(); self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         # Divider under the last device too (the header func only draws lines *between* rows).
         css = Gtk.CssProvider()
-        css.load_from_data(b"row.easybt-last { border-bottom: 1px solid alpha(currentColor, 0.12); }")
+        css.load_from_data(b"""
+            row.easybt-last { border-bottom: 1px solid alpha(currentColor, 0.12); }
+            window.easybt-panel { background-color: transparent; }
+            .bt-card { background-color: #2c2c2c; color: #ffffff; border: 1px solid rgba(255,255,255,0.08);
+                       border-radius: 18px; padding: 14px 14px 10px; }
+            .bt-title { font-weight: bold; font-size: 11pt; }
+            .bt-iconbtn { padding: 4px; min-width: 0; min-height: 0; border-radius: 10px; }
+            .bt-banner { background-color: rgba(255,255,255,0.05); border-radius: 14px; padding: 8px 10px; }
+            .bt-listwrap { background-color: rgba(255,255,255,0.05); border-radius: 14px; }
+            .bt-listwrap list, .bt-listwrap row { background-color: transparent; }
+            .bt-listwrap row:hover { background-color: rgba(255,255,255,0.04); }
+        """)
         Gtk.StyleContext.add_provider_for_screen(self.win.get_screen(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.list.set_header_func(lambda row, before: row.set_header(Gtk.Separator() if before else None))
         self.list.set_sort_func(self._sort)
         self.list.set_placeholder(Gtk.Label(label="No devices yet. Click “Add device”.", margin=30))
-        frame.add(self.list); sc.add(frame)
+        frame.pack_start(self.list, True, True, 0); sc.add(frame)
         outer.pack_start(sc, True, True, 0)
         self.toast_lbl = Gtk.Label(xalign=0, wrap=True); outer.pack_start(self.toast_lbl, False, False, 0)
         self.win.add(outer)
@@ -1219,11 +1243,35 @@ class App(Gtk.Application):
     # ---- window / tray ----
     def show_window(self):
         tray_announce()
-        self.win.show(); self.win.present()
+        self.win.show_all()
+        self._place_near_pointer()
+        self.win.present_with_time(Gtk.get_current_event_time() or int(time.time()))
 
     def toggle_window(self):
-        if self.win.get_visible() and self.win.is_active(): self.win.hide()
+        if self.win.get_visible(): self.win.hide()
         else: self.show_window()
+
+    def _place_near_pointer(self):
+        disp = Gdk.Display.get_default()
+        _s, x, y = disp.get_default_seat().get_pointer().get_position()
+        mon = disp.get_monitor_at_point(x, y).get_workarea()
+        ww, wh = self.win.get_size()
+        nx = min(max(mon.x + 8, x - ww // 2), mon.x + mon.width - ww - 8)
+        ny = y - wh - 12 if y - wh - 12 > mon.y else y + 12
+        self.win.move(nx, min(max(mon.y + 8, ny), mon.y + mon.height - wh - 8))
+
+    def _maybe_hide(self):
+        """Close like a popup when you click elsewhere, but not while one of our dialogs or menus is up."""
+        if not self.win.get_visible() or self.win.is_active():
+            return False
+        others = [w for w in Gtk.Window.list_toplevels()
+                  if w is not self.win and w.get_visible() and w.get_window_type() == Gtk.WindowType.TOPLEVEL
+                  and (w.get_transient_for() is self.win or w in self.get_windows())]
+        menus = [w for w in Gtk.Window.list_toplevels()
+                 if w.get_visible() and w.get_window_type() == Gtk.WindowType.POPUP and w.get_size()[1] > 40]
+        if not others and not menus:
+            self.win.hide()
+        return False
 
     def setup_tray(self):
         if XApp is None:
