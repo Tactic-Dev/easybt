@@ -16,7 +16,7 @@ WP_MUSIC_BODY = """-- EasyBT: keep Bluetooth speakers/headphones in high-quality
 bluetooth_policy.policy["media-role.use-headset-profile"] = false
 """
 VISIBLE_SECONDS = 180
-VERSION = "1.0.0"  # keep in sync with the VERSION file and git tag
+VERSION = "1.1.0"  # keep in sync with the VERSION file and git tag
 
 DEFAULTS = {
     "receive_files": True,          # accept incoming files (Object Push)

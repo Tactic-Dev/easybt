@@ -23,6 +23,36 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from easybt_settings import Config, SettingsWindow, VISIBLE_SECONDS
 
 APP_ID = "dev.tacticdev.easybt"
+
+# --- shared by the TACTICDEV Easy* tray apps -------------------------------------------------
+# Only one tray panel open at a time: opening one tells the others (over the session bus) to close.
+TRAY_IFACE, TRAY_PATH = "dev.tacticdev.Tray", "/dev/tacticdev/tray"
+
+def tray_announce():
+    try:
+        Gio.bus_get_sync(Gio.BusType.SESSION, None).emit_signal(
+            None, TRAY_PATH, TRAY_IFACE, "Opened", GLib.Variant("(s)", (APP_ID,)))
+    except GLib.Error:
+        pass
+
+def tray_listen(hide):
+    Gio.bus_get_sync(Gio.BusType.SESSION, None).signal_subscribe(
+        None, TRAY_IFACE, "Opened", TRAY_PATH, None, Gio.DBusSignalFlags.NONE,
+        lambda c, s, p, i, n, params: params.unpack()[0] != APP_ID and hide())
+
+def add_restart_action(app):
+    """Self-restart that stays inside the desktop session (system permissions depend on it).
+    Trigger: gdbus call --session -d <APP_ID> -o /<APP_ID with dots as slashes>
+             -m org.freedesktop.Application.ActivateAction restart [] {}"""
+    act = Gio.SimpleAction.new("restart", None)
+    def restart(*_):
+        script = (f"while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.2; done; "
+                  f"exec {sys.executable} {os.path.abspath(__file__)} --hidden")
+        subprocess.Popen(["sh", "-c", script])
+        app.quit()
+    act.connect("activate", restart)
+    app.add_action(act)
+# ---------------------------------------------------------------------------------------------
 BUS = "org.bluez"
 DEV_IF, ADP_IF, BAT_IF = "org.bluez.Device1", "org.bluez.Adapter1", "org.bluez.Battery1"
 NET_IF = "org.bluez.Network1"
@@ -984,6 +1014,8 @@ class App(Gtk.Application):
         self.toast_lbl = Gtk.Label(xalign=0, wrap=True); outer.pack_start(self.toast_lbl, False, False, 0)
         self.win.add(outer)
         self.setup_tray()
+        tray_listen(lambda: self.win.get_visible() and self.win.hide())
+        add_restart_action(self)
         self.on_change()
         # Wake from sleep → reconnect favorites (once).
         self.bz.bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep",
@@ -1186,6 +1218,7 @@ class App(Gtk.Application):
 
     # ---- window / tray ----
     def show_window(self):
+        tray_announce()
         self.win.show(); self.win.present()
 
     def toggle_window(self):

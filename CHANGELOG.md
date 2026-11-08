@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 (2026-11-07)
+- Only one tray panel open at a time across the TACTICDEV Easy* apps (opening one closes the others).
+- `restart` action so the app can restart itself inside the desktop session.
+
 ## 1.0.0 (2026-11-07)
 First release. A simple, reliable Bluetooth manager for Linux Mint / Cinnamon (GTK3 + BlueZ D-Bus).
 
