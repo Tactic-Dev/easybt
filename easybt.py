@@ -1020,12 +1020,12 @@ class App(Gtk.Application):
         css.load_from_data(b"""
             row.easybt-last { border-bottom: 1px solid alpha(currentColor, 0.12); }
             window.easybt-panel { background-color: transparent; }
-            .bt-card { background-color: #2c2c2c; color: #ffffff; border: 1px solid rgba(255,255,255,0.08);
-                       border-radius: 18px; padding: 14px 14px 10px; }
+            .bt-card { background-color: rgba(20, 21, 25, 0.96); color: #ffffff; border: 1px solid rgba(255,255,255,0.08);
+                       border-radius: 12px; padding: 14px 14px 10px; }
             .bt-title { font-weight: bold; font-size: 11pt; }
-            .bt-iconbtn { padding: 4px; min-width: 0; min-height: 0; border-radius: 10px; }
-            .bt-banner { background-color: rgba(255,255,255,0.05); border-radius: 14px; padding: 8px 10px; }
-            .bt-listwrap { background-color: rgba(255,255,255,0.05); border-radius: 14px; }
+            .bt-iconbtn { padding: 4px; min-width: 0; min-height: 0; border-radius: 8px; }
+            .bt-banner { background-color: rgba(255,255,255,0.05); border-radius: 10px; padding: 8px 10px; }
+            .bt-listwrap { background-color: rgba(255,255,255,0.05); border-radius: 10px; }
             .bt-listwrap list, .bt-listwrap row { background-color: transparent; }
             .bt-listwrap row:hover { background-color: rgba(255,255,255,0.04); }
         """)
